@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!-- Required meta tags-->
+    <meta charset="utf-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- Color theme for statusbar (Android only) -->
+    <meta name="theme-color" content="#2196f3">
+    <!-- Your app title -->
+    <title>Template Tab</title>
+    <!-- Path to Framework7 Library Icon CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/framework7-icons@3.0.1/css/framework7-icons.css">
+    <!-- Path reset CSS -->
+    <link rel="stylesheet" href="css/reset.css">
+    <!-- Path to Framework7 Library Bundle CSS -->
+    <link rel="stylesheet" href="lib/framework7-bundle.min.css">
+    <!-- CSS PERSONALIZADO PARA MENU-->
+    <link rel="stylesheet" href="css/personalizado.css">
+    <!--Ícones Material Design-->
+    <link rel="stylesheet" href="css/materialdesignicons.min.css">
+
+
+</head>
+
+<body>
+    <div id="app">
+        <header class="navbar"></header>
+        <div class="view view-main">
+            <div data-name="index" class="page color-theme-blue">
+                <div class="page-content">
+                    <div class="cards-container-page">
+                        <div class="flex-cards">
+                            <div class="demo-expandable-cards">
+                                <div class="card card-expandable">
+                                    <div class="card-content">
+                                        <div class="card-bg" style="min-height: 300px;">
+                                            <div class="card-header text-color-white display-block" style="text-align:center;">
+                                                <h1>Umidade</h1>
+                                                <small style="opacity: 0.7">Monitore a umidade do solo da suas plantações!</small>
+                                                <img class="img-umidade" src="./img/Water.svg" alt="gota">
+                                            </div>
+                                            <a class="link card-close card-opened-fade-in color-white"
+                                                style="position: absolute; right: 15px; top: 15px">
+                                                <i class="icon f7-icons">xmark_circle_fill</i>
+                                            </a>
+                                        </div>
+                                        <div class="card-content-padding">
+                                            <p>
+                                                O sistema de monitoramento de umidade utiliza sensores específicos, geralmente do tipo capacitivo ou resistivo, que medem a quantidade de água presente no solo em tempo real.
+                                            </p>
+                                            <p>
+                                                Esses sensores são posicionados estrategicamente na plantação, próximos às raízes das plantas, para garantir que a leitura reflita com precisão a condição de umidade do solo.
+                                            </p>
+                                            <p>
+                                                Os dados coletados pelos sensores são enviados para um microcontrolador Arduino, que processa essas informações e as converte em valores compreensíveis, como porcentagem de umidade.
+                                            </p>
+                                            <p>
+                                                Em sistemas mais avançados, essas informações podem ser transmitidas via Wi-Fi ou outra tecnologia de comunicação para um aplicativo ou painel online, permitindo que o agricultor acompanhe o nível de água do solo remotamente.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card__container">
+                                <div class="card-gauge">
+                                    <h1 class="card__text-gauge text-color-blue">Umidade</h1>
+                                    <div class="gauge gauge-init my-gauge gauge_link2"></div>
+                                </div>
+                                <button id="btn-init" class="bg-color-green"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Path to Framework7 Library Bundle JS-->
+    <script type="text/javascript" src="lib/framework7-bundle.min.js"></script>
+	<!-- jQuery -->
+	<script type="text/javascript" src="lib/jquery-3.7.0.min.js"></script>	
+    <!-- Roteamento do app-->
+    <script type="text/javascript" src="js/routes.js"></script>
+    <script src="cordova.js"></script>
+
+<script>
+var gaugeUmidade = app.gauge.create({
+  el: '.gauge_link2',
+  value: 0.0,
+  type: 'circle',
+  size: 200,
+  valueText: '0%',
+  valueFontSize: 64,
+  valueFontWeight: 700,
+  valueTextColor: '#278cd6',
+  borderColor: '#278cd6',
+  borderBgColor: '#d4e6f7',
+  borderWidth: 12,
+  on: {
+    beforeDestroy: function () {
+      console.log('Gauge de Umidade será destruído');
+    }
+  }
+});
+
+async function conectarArduino() {
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+
+    const decoder = new TextDecoderStream();
+    port.readable.pipeTo(decoder.writable);
+    const inputStream = decoder.readable
+      .pipeThrough(new TransformStream(new LineBreakTransformer()));
+
+    const reader = inputStream.getReader();
+
+    // Controle de tempo (2.5s ou ajuste como quiser)
+    const INTERVALO = 2500;
+    let ultimoUpdate = 0;
+
+    // Armazena valor temporário
+    let ultimaUmidade = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        reader.releaseLock();
+        break;
+      }
+      if (value) {
+        let linha = value.trim();
+
+        // Apenas umidade
+        if (linha.startsWith("U:")) {
+          const umidade = parseInt(linha.slice(2));
+          if (!isNaN(umidade)) ultimaUmidade = umidade;
+        }
+
+        // Atualiza apenas a cada INTERVALO
+        const agora = Date.now();
+        if (agora - ultimoUpdate >= INTERVALO) {
+          ultimoUpdate = agora;
+
+          if (ultimaUmidade !== null) {
+            console.log("Umidade recebida:", ultimaUmidade + "%");
+            gaugeUmidade.update({
+              value: ultimaUmidade / 100,
+              valueText: ultimaUmidade + "%"
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Erro na conexão serial:", err);
+  }
+}
+
+// Transformador para garantir leitura linha a linha
+class LineBreakTransformer {
+  constructor() {
+    this.container = '';
+  }
+  transform(chunk, controller) {
+    this.container += chunk;
+    const lines = this.container.split('\n');
+    this.container = lines.pop();
+    for (const line of lines) {
+      controller.enqueue(line);
+    }
+  }
+  flush(controller) {
+    controller.enqueue(this.container);
+  }
+}
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("btn-init");
+    btn.textContent = "Conectar Sensores";
+    btn.onclick = conectarArduino;
+  });
+</script>
+
+</body>
+
+</html>
